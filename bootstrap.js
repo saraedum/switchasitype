@@ -90,7 +90,7 @@ check = function(target, window){
 	var text = target.value;
 	if (!text)
 		return;
-	text = text.split(/\W+/).slice(0,25);
+	text = text.split(/\W+/).slice(-10);
 
 	var editor = target.QueryInterface(Components.interfaces.nsIDOMNSEditableElement).editor;
 	if (!editor)
