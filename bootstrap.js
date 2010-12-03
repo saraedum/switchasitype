@@ -1,8 +1,6 @@
 Components.utils.import("resource://gre/modules/Services.jsm");
 
 startup = function () {
-	reload();
-
 	var windowEnumerator = Services.wm.getEnumerator("navigator:browser");
 	while(windowEnumerator.hasMoreElements()){
 		var window = windowEnumerator.getNext();
@@ -27,6 +25,9 @@ windows = [];
 blockers = {};
 
 onWindow = function(subject, topic){
+	if (windows.length==0)//calling 'reload' in startup() may result in not all dictionaries being visible
+		reload();
+
 	window = subject.QueryInterface(Components.interfaces.nsIDOMWindow);
 	if (topic=="domwindowclosed")
 		unregister(window);
