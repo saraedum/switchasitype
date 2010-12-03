@@ -62,7 +62,7 @@ onKeyPress = function(e){
 	var target = e.originalTarget;
 	if (!target)
 		return;			
-	if (target.type == "password")
+	if (!target.value)
 		return;
 
 	check(target);
@@ -82,7 +82,18 @@ registerBlocker = function(target){
 	blockers[target].timer.init(blockers[target], 500, Components.interfaces.nsITimer.TYPE_ONE_SHOT);
 };
 
-check = function(target, window){	
+check = function(target){	
+	target = target.QueryInterface(Components.interfaces.nsIDOMNSEditableElement);
+	var editor = target.editor;
+	if (!editor)
+		return;
+
+	var spellChecker = editor.getInlineSpellChecker(false);
+	if (!spellChecker)
+		return;//spell checking was never enabled
+	if (!spellChecker.enableRealTimeSpell)
+		return;//spell checking is disabled
+
 	if (blockers[target]){
 		blockers[target].pending = true;
 		return;
@@ -93,14 +104,6 @@ check = function(target, window){
 	if (!text)
 		return;
 	text = text.split(/\W+/).slice(-10);
-
-	var editor = target.QueryInterface(Components.interfaces.nsIDOMNSEditableElement).editor;
-	if (!editor)
-		return;
-
-	var spellChecker = editor.getInlineSpellChecker(false);
-	if (!spellChecker)
-		return;//spell checking is disabled
 
 	var errors = [];
 	for(var i=0;i<installedDictionaries.length;i++)
