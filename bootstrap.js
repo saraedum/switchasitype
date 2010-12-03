@@ -17,7 +17,7 @@ shutdown = function () {
 	for(var i=0;i<windows.length;i++)
 		unregister(windows[i]);
 	for(var i=0;i<blockers.length;i++)
-		clearTimeout(blockers.items[i]);
+		blockers.items[i].timer.cancel();
 };
 
 spellCheckEngines = {};
@@ -65,27 +65,29 @@ onKeyPress = function(e){
 	if (target.type == "password")
 		return;
 
-	var window = e.view;
-
-	check(target, window);
+	check(target);
 };
 
-registerBlocker = function(target, window){
-	unblock = function(){
-		blocker = blockers[target];
-		delete(blockers[target]);
-		if (blocker == "pending")
-			check(target, window);
+registerBlocker = function(target){
+	blockers[target] = {
+		observe: function(subject, topic, data){
+			blocker = blockers[target];
+			delete(blockers[target]);
+			if (blocker.pending)
+				check(target);
+		},
+		pending: false,
+		timer: Components.classes["@mozilla.org/timer;1"].createInstance(Components.interfaces.nsITimer),
 	};
-	blockers[target] = window.setTimeout(unblock, 500);
+	blockers[target].timer.init(blockers[target], 500, Components.interfaces.nsITimer.TYPE_ONE_SHOT);
 };
 
 check = function(target, window){	
 	if (blockers[target]){
-		blockers[target] = "pending";
+		blockers[target].pending = true;
 		return;
 	}
-	registerBlocker(target, window);
+	registerBlocker(target);
 
 	var text = target.value;
 	if (!text)
