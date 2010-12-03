@@ -16,12 +16,15 @@ shutdown = function () {
 	Services.ww.unregisterNotification(onWindow);
 	for(var i=0;i<windows.length;i++)
 		unregister(windows[i]);
+	for(var i=0;i<blockers.length;i++)
+		clearTimeout(blockers.items[i]);
 }
 
 spellCheckEngines = {};
 installedDictionaries = [];
 personalDictionary = null;
 windows = [];
+blockers = {};
 
 onWindow = function(subject, topic){
 	window = subject.QueryInterface(Components.interfaces.nsIDOMWindow);
@@ -61,6 +64,28 @@ onKeyPress = function(e){
 		return;			
 	if (target.type == "password")
 		return;
+
+	var window = e.view;
+
+	check(target, window);
+}
+
+registerBlocker = function(target, window){
+	unblock = function(){
+		blocker = blockers[target];
+		delete(blockers[target]);
+		if (blocker == "pending")
+			check(target, window);
+	};
+	blockers[target] = window.setTimeout(unblock, 500);
+}
+
+check = function(target, window){	
+	if (blockers[target]){
+		blockers[target] = "pending";
+		return;
+	}
+	registerBlocker(target, window);
 
 	var text = target.value;
 	if (!text)
