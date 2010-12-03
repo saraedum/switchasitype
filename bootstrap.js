@@ -10,7 +10,7 @@ startup = function () {
 	}
 
 	Services.ww.registerNotification(onWindow);
-}
+};
 
 shutdown = function () {
 	Services.ww.unregisterNotification(onWindow);
@@ -18,7 +18,7 @@ shutdown = function () {
 		unregister(windows[i]);
 	for(var i=0;i<blockers.length;i++)
 		clearTimeout(blockers.items[i]);
-}
+};
 
 spellCheckEngines = {};
 installedDictionaries = [];
@@ -32,7 +32,7 @@ onWindow = function(subject, topic){
 		unregister(window);
 	if (topic=="domwindowopened")
 		register(window);
-}
+};
 
 reload = function() { 
 	var spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].createInstance(Components.interfaces.mozISpellCheckingEngine);
@@ -46,17 +46,17 @@ reload = function() {
 	}
 
 	personalDictionary = Components.classes["@mozilla.org/spellchecker/personaldictionary;1"].getService(Components.interfaces.mozIPersonalDictionary);
-}
+};
 
 register = function(window){
 	window.addEventListener("keypress", onKeyPress, false);
 	windows.push(window);
-}
+};
 
 unregister = function(window){
 	window.removeEventListener("keypress", onKeyPress, false);
 	windows=windows.filter(function(item){return item!=window;});
-}
+};
 
 onKeyPress = function(e){
 	var target = e.originalTarget;
@@ -68,7 +68,7 @@ onKeyPress = function(e){
 	var window = e.view;
 
 	check(target, window);
-}
+};
 
 registerBlocker = function(target, window){
 	unblock = function(){
@@ -78,7 +78,7 @@ registerBlocker = function(target, window){
 			check(target, window);
 	};
 	blockers[target] = window.setTimeout(unblock, 500);
-}
+};
 
 check = function(target, window){	
 	if (blockers[target]){
