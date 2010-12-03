@@ -103,7 +103,7 @@ check = function(target){
 	var text = target.value;
 	if (!text)
 		return;
-	text = text.split(/\W+/).slice(-10);
+	text = text.replace(/^\s\s*/, '').replace(/\s\s*$/, '').split(/[\s;:,.()\[\]¡!¿?]+/).slice(-10);//this is lame but \W will also throw and out umlauts and all sorts of funny characters
 
 	var errors = [];
 	for(var i=0;i<installedDictionaries.length;i++)
