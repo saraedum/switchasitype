@@ -1,33 +1,50 @@
 Components.utils.import("resource://gre/modules/Services.jsm");
 
+spellCheckEngines = {};
+installedDictionaries = null;
+personalDictionary = null;
+windows = [];
+blockers = {};
+
+install = function () {};
+uninstall = function () {};
+
 startup = function () {
+	resetState();
+
 	var windowEnumerator = Services.wm.getEnumerator("navigator:browser");
 	while(windowEnumerator.hasMoreElements()){
-		var window = windowEnumerator.getNext();
-		register(window);
+		register(windowEnumerator.getNext());
 	}
 
 	Services.ww.registerNotification(onWindow);
 };
 
 shutdown = function () {
+	resetState();
+
 	Services.ww.unregisterNotification(onWindow);
-	for(var i=0;i<windows.length;i++)
-		unregister(windows[i]);
-	for(var i=0;i<blockers.length;i++)
-		blockers.items[i].timer.cancel();
 };
 
-spellCheckEngines = {};
-installedDictionaries = [];
-personalDictionary = null;
-windows = [];
-blockers = {};
+resetState = function(){
+	resetDictionaries();
 
+	for(var i=0;i<windows.length;i++)
+		unregister(windows[i]);
+	windows = [];
+
+	for(var i=0;i<blockers.length;i++)
+		blockers.items[i].timer.cancel();
+	blockers = [];
+};
+
+resetDictionaries = function(){
+	installedDictionaries = null;
+	personalDictionary = null;
+	spellCheckEngines = {};
+};
+	
 onWindow = function(subject, topic){
-	if (windows.length==0)//calling 'reload' in startup() may result in not all dictionaries being visible
-		reload();
-
 	window = subject.QueryInterface(Components.interfaces.nsIDOMWindow);
 	if (topic=="domwindowclosed")
 		unregister(window);
@@ -35,18 +52,27 @@ onWindow = function(subject, topic){
 		register(window);
 };
 
-reload = function() { 
-	var spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].createInstance(Components.interfaces.mozISpellCheckingEngine);
-	spellCheckEngine.getDictionaryList(this.installedDictionaries, {});
-	installedDictionaries = installedDictionaries.value.toString().split(",");
+log = function(message) {
+	Services.console.logStringMessage(message);
+};
 
-	for(var i=0;i<this.installedDictionaries.length;i++){
-		spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].createInstance(Components.interfaces.mozISpellCheckingEngine);
-		spellCheckEngine.dictionary = installedDictionaries[i];
-		spellCheckEngines[installedDictionaries[i]] = spellCheckEngine;
+refreshDictionaries = function() {
+	if (installedDictionaries==null){
+		installedDictionaries = [];
+		var spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].createInstance(Components.interfaces.mozISpellCheckingEngine);
+		spellCheckEngine.getDictionaryList(this.installedDictionaries, {});
+		installedDictionaries = installedDictionaries.value.toString().split(",");
+
+		for(var i=0;i<this.installedDictionaries.length;i++){
+			spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].createInstance(Components.interfaces.mozISpellCheckingEngine);
+			spellCheckEngine.dictionary = installedDictionaries[i];
+			spellCheckEngines[installedDictionaries[i]] = spellCheckEngine;
+		}
+
+		personalDictionary = Components.classes["@mozilla.org/spellchecker/personaldictionary;1"].getService(Components.interfaces.mozIPersonalDictionary);
 	}
+};
 
-	personalDictionary = Components.classes["@mozilla.org/spellchecker/personaldictionary;1"].getService(Components.interfaces.mozIPersonalDictionary);
 };
 
 register = function(window){
@@ -84,6 +110,8 @@ registerBlocker = function(target){
 };
 
 check = function(target){	
+	refreshDictionaries();
+
 	target = target.QueryInterface(Components.interfaces.nsIDOMNSEditableElement);
 	var editor = target.editor;
 	if (!editor)
@@ -104,7 +132,7 @@ check = function(target){
 	var text = target.value;
 	if (!text)
 		return;
-	text = text.replace(/^\s\s*/, '').replace(/\s\s*$/, '').split(/[\s;:,.()\[\]¡!¿?]+/).slice(-10);//this is lame but \W will also throw and out umlauts and all sorts of funny characters
+	text = text.replace(/^\s\s*/, '').replace(/\s\s*$/, '').split(/[\s;:,.()\[\]¡!¿?]+/).slice(-10);//this is lame but \W will also throws out umlauts and all sorts of funny characters
 
 	var errors = [];
 	for(var i=0;i<installedDictionaries.length;i++)
