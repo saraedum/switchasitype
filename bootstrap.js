@@ -1,4 +1,5 @@
 Components.utils.import("resource://gre/modules/Services.jsm");
+Components.utils.import("resource://gre/modules/AddonManager.jsm");
 
 spellCheckEngines = {};
 installedDictionaries = null;
@@ -18,11 +19,13 @@ startup = function () {
 	}
 
 	Services.ww.registerNotification(onWindow);
+	AddonManager.addAddonListener(addonListener);
 };
 
 shutdown = function () {
 	resetState();
 
+	AddonManager.removeAddonListener(addonListener);
 	Services.ww.unregisterNotification(onWindow);
 };
 
@@ -73,6 +76,9 @@ refreshDictionaries = function() {
 	}
 };
 
+addonListener = {//whenever an addon is enabled/disabled we refresh the set of dictionaries
+	onEnabled : function(addon) { resetDictionaries(); },
+	onDisalbed : function(addon) { resetDictionaries(); }
 };
 
 register = function(window){
