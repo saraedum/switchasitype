@@ -48,11 +48,11 @@ resetDictionaries = function(){
 };
 	
 onWindow = function(subject, topic){
-	window = subject.QueryInterface(Components.interfaces.nsIDOMWindow);
+	subject = subject.QueryInterface(Components.interfaces.nsIDOMWindow);
 	if (topic=="domwindowclosed")
-		unregister(window);
+		unregister(subject);
 	if (topic=="domwindowopened")
-		register(window);
+		register(subject);
 };
 
 log = function(message) {
