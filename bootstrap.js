@@ -118,6 +118,9 @@ registerBlocker = function(target){
 check = function(target){	
 	refreshDictionaries();
 
+	if (!(target instanceof Components.interfaces.nsIDOMNSEditableElement))
+		return;
+
 	target = target.QueryInterface(Components.interfaces.nsIDOMNSEditableElement);
 	var editor = target.editor;
 	if (!editor)
@@ -138,7 +141,22 @@ check = function(target){
 	var text = target.value;
 	if (!text)
 		return;
-	text = text.replace(/^\s\s*/, '').replace(/\s\s*$/, '').split(/[\s;:,.()\[\]¡!¿?]+/).slice(-10);//this is lame but \W will also throws out umlauts and all sorts of funny characters
+
+	// figure out the caret position so we only use the text in front of the caret
+	var cutoffPosition;
+	if (editor.selection.focusNode != editor.rootElement){
+		cutoffPosition = editor.selection.focusOffset;
+		// this is the caret position before the key press so it's potentially of by one
+		cutoffPosition = cutoffPosition + 1;
+	}else{
+		// if the caret is at the end of the text, the focusNode has a strange value and the focusOffset is 2 (not sure if this can only happen in such a case)
+		cutoffPosition = text.length;
+	}
+	
+	if (cutoffPosition > text.length)
+		cutoffPosition = text.length;
+
+	text = text.substring(0,cutoffPosition).replace(/^\s\s*/, '').replace(/\s\s*$/, '').split(/[\s;:,.()\[\]¡!¿?]+/).slice(-10);//this is lame but \W will also throws out umlauts and all sorts of funny characters
 
 	var errors = [];
 	for(var i=0;i<installedDictionaries.length;i++)
