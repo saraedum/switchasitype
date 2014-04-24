@@ -62,7 +62,7 @@ log = function(message) {
 refreshDictionaries = function() {
 	if (installedDictionaries==null){
 		installedDictionaries = [];
-		var spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].createInstance(Components.interfaces.mozISpellCheckingEngine);
+		var spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].getService(Components.interfaces.mozISpellCheckingEngine);
 		spellCheckEngine.getDictionaryList(this.installedDictionaries, {});
 		installedDictionaries = installedDictionaries.value.toString().split(",");
 
