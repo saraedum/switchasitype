@@ -156,7 +156,7 @@ check = function(target){
 	if (cutoffPosition > text.length)
 		cutoffPosition = text.length;
 
-	text = text.substring(0,cutoffPosition).replace(/^\s\s*/, '').replace(/\s\s*$/, '').split(/[\s;:,.()\[\]¡!¿?]+/).slice(-10);//this is lame but \W will also throws out umlauts and all sorts of funny characters
+	text = text.substring(0,cutoffPosition).trim().split(/[\s;:,.()\[\]¡!¿?]+/).slice(-10);//this is lame but \W will also throws out umlauts and all sorts of funny characters
 
 	var errors = [];
 	for(var i=0;i<installedDictionaries.length;i++)
