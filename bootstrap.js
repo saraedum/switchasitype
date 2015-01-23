@@ -78,7 +78,7 @@ refreshDictionaries = function() {
 
 addonListener = {//whenever an addon is enabled/disabled we refresh the set of dictionaries
 	onEnabled : function(addon) { resetDictionaries(); },
-	onDisalbed : function(addon) { resetDictionaries(); }
+	onDisabled : function(addon) { resetDictionaries(); }
 };
 
 register = function(window){
