@@ -55,10 +55,6 @@ onWindow = function(subject, topic){
 		register(subject);
 };
 
-log = function(message) {
-	Services.console.logStringMessage(message);
-};
-
 refreshDictionaries = function() {
 	if (installedDictionaries==null){
 		installedDictionaries = [];
