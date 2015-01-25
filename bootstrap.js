@@ -1,183 +1,187 @@
-Components.utils.import("resource://gre/modules/Services.jsm");
 Components.utils.import("resource://gre/modules/AddonManager.jsm");
-
-spellCheckEngines = {};
-installedDictionaries = null;
-personalDictionary = null;
-windows = [];
-blockers = {};
+Components.utils.import("resource://gre/modules/Services.jsm");
+Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "LanguageDetector",
+  "resource:///modules/translation/LanguageDetector.jsm");
 
 install = function () {};
 uninstall = function () {};
 
 startup = function () {
-	resetState();
+  switchAsIType.resetState();
 
-	var windowEnumerator = Services.wm.getEnumerator("navigator:browser");
-	while(windowEnumerator.hasMoreElements()){
-		register(windowEnumerator.getNext());
-	}
+  let windowEnumerator = Services.wm.getEnumerator("navigator:browser");
+  while (windowEnumerator.hasMoreElements()) {
+    switchAsIType.registerEventListener(windowEnumerator.getNext());
+  }
 
-	Services.ww.registerNotification(onWindow);
-	AddonManager.addAddonListener(addonListener);
+  Services.ww.registerNotification(switchAsIType.onWindowOpened);
+  AddonManager.addAddonListener(addonListener);
 };
 
 shutdown = function () {
-	resetState();
+  switchAsIType.resetState();
 
-	AddonManager.removeAddonListener(addonListener);
-	Services.ww.unregisterNotification(onWindow);
-};
-
-resetState = function(){
-	resetDictionaries();
-
-	for(var i=0;i<windows.length;i++)
-		unregister(windows[i]);
-	windows = [];
-
-	for(var i=0;i<blockers.length;i++)
-		blockers.items[i].timer.cancel();
-	blockers = [];
-};
-
-resetDictionaries = function(){
-	installedDictionaries = null;
-	personalDictionary = null;
-	spellCheckEngines = {};
-};
-	
-onWindow = function(subject, topic){
-	subject = subject.QueryInterface(Components.interfaces.nsIDOMWindow);
-	if (topic=="domwindowclosed")
-		unregister(subject);
-	if (topic=="domwindowopened")
-		register(subject);
-};
-
-log = function(message) {
-	Services.console.logStringMessage(message);
-};
-
-refreshDictionaries = function() {
-	if (installedDictionaries==null){
-		installedDictionaries = [];
-		var spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].getService(Components.interfaces.mozISpellCheckingEngine);
-		spellCheckEngine.getDictionaryList(this.installedDictionaries, {});
-		installedDictionaries = installedDictionaries.value.toString().split(",");
-
-		for(var i=0;i<this.installedDictionaries.length;i++){
-			spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].createInstance(Components.interfaces.mozISpellCheckingEngine);
-			spellCheckEngine.dictionary = installedDictionaries[i];
-			spellCheckEngines[installedDictionaries[i]] = spellCheckEngine;
-		}
-
-		personalDictionary = Components.classes["@mozilla.org/spellchecker/personaldictionary;1"].getService(Components.interfaces.mozIPersonalDictionary);
-	}
+  AddonManager.removeAddonListener(addonListener);
+  Services.ww.unregisterNotification(switchAsIType.onWindowClosed);
 };
 
 addonListener = {//whenever an addon is enabled/disabled we refresh the set of dictionaries
-	onEnabled : function(addon) { resetDictionaries(); },
-	onDisalbed : function(addon) { resetDictionaries(); }
+  onEnabled: function(addon) { switchAsIType.dictListUpToDate = false; },
+  onDisabled: function(addon) { switchAsIType.dictListUpToDate = false; },
 };
 
-register = function(window){
-	window.addEventListener("keypress", onKeyPress, false);
-	windows.push(window);
-};
+let switchAsIType = {
+  kProcessWaitTime: 500, // wait time between two runs of the language detector in ms
+  kTextLengthMax: 100, // maximum length of text passed to language detector
 
-unregister = function(window){
-	window.removeEventListener("keypress", onKeyPress, false);
-	windows=windows.filter(function(item){return item!=window;});
-};
+  checkJobs: new Map(),
+  dictLanguages: new Map(),
+  dictListUpToDate: false,
+  windows: new Set(),
 
-onKeyPress = function(e){
-	var target = e.originalTarget;
-	if (!target)
-		return;			
-	if (!target.value)
-		return;
+  getLanguage: function(target) {
+    if (!(target instanceof Components.interfaces.nsIDOMNSEditableElement))
+      return;
 
-	check(target);
-};
+    target = target.QueryInterface(Components.interfaces.nsIDOMNSEditableElement);
+    let editor = target.editor;
+    if (!editor)
+      return;
 
-registerBlocker = function(target){
-	blockers[target] = {
-		observe: function(subject, topic, data){
-			blocker = blockers[target];
-			delete(blockers[target]);
-			if (blocker.pending)
-				check(target);
-		},
-		pending: false,
-		timer: Components.classes["@mozilla.org/timer;1"].createInstance(Components.interfaces.nsITimer),
-	};
-	blockers[target].timer.init(blockers[target], 500, Components.interfaces.nsITimer.TYPE_ONE_SHOT);
-};
+    let spellChecker = editor.getInlineSpellChecker(false);
+    if (!spellChecker)
+      return;//spell checking was never enabled
+    if (!spellChecker.enableRealTimeSpell)
+      return;//spell checking is disabled
 
-check = function(target){	
-	refreshDictionaries();
+    if (!target.value)
+      return;
 
-	if (!(target instanceof Components.interfaces.nsIDOMNSEditableElement))
-		return;
+    let text = switchAsIType.getText(target.value, editor);
 
-	target = target.QueryInterface(Components.interfaces.nsIDOMNSEditableElement);
-	var editor = target.editor;
-	if (!editor)
-		return;
+    if (!switchAsIType.dictListUpToDate) {
+      switchAsIType.updateDictList();
+      switchAsIType.dictListUpToDate = true;
+    }
 
-	var spellChecker = editor.getInlineSpellChecker(false);
-	if (!spellChecker)
-		return;//spell checking was never enabled
-	if (!spellChecker.enableRealTimeSpell)
-		return;//spell checking is disabled
+    LanguageDetector.detectLanguage(text).then(result => {
+      // Bail if we're not confident.
+      if (!result.confident) {
+        return;
+      }
 
-	if (blockers[target]){
-		blockers[target].pending = true;
-		return;
-	}
-	registerBlocker(target);
+      // The window might be gone by now.
+      if (Components.utils.isDeadWrapper(editor)) {
+        return;
+      }
 
-	var text = target.value;
-	if (!text)
-		return;
+      // There is no dictionary available for the detected language.
+      if (!switchAsIType.dictLanguages.has(result.language)) {
+        return;
+      }
+      
+      let languageID = switchAsIType.dictLanguages.get(result.language);
+      if (languageID == spellChecker.spellChecker.GetCurrentDictionary()) {
+        return;
+      }
 
-	// figure out the caret position so we only use the text in front of the caret
-	var cutoffPosition;
-	if (editor.selection.focusNode != editor.rootElement){
-		cutoffPosition = editor.selection.focusOffset;
-		// this is the caret position before the key press so it's potentially of by one
-		cutoffPosition = cutoffPosition + 1;
-	}else{
-		// if the caret is at the end of the text, the focusNode has a strange value and the focusOffset is 2 (not sure if this can only happen in such a case)
-		cutoffPosition = text.length;
-	}
-	
-	if (cutoffPosition > text.length)
-		cutoffPosition = text.length;
+      spellChecker.spellChecker.SetCurrentDictionary(languageID);
+    }).catch(function(error) {
+      Components.utils.reportError("switchasitype: " + error);
+    });
+  },
 
-	text = text.substring(0,cutoffPosition).replace(/^\s\s*/, '').replace(/\s\s*$/, '').split(/[\s;:,.()\[\]¡!¿?]+/).slice(-10);//this is lame but \W will also throws out umlauts and all sorts of funny characters
+  getText: function (text, editor) {
+    // figure out the caret position so we only use the text in front of the caret
+    let cutoffPosition;
+    if (editor.selection.focusNode != editor.rootElement){
+      cutoffPosition = editor.selection.focusOffset;
+      // this is the caret position before the key press so it's potentially of by one
+      cutoffPosition++;
+    } else {
+      // if the caret is at the end of the text, the focusNode has a strange value and the focusOffset is 2 (not sure if this can only happen in such a case)
+      cutoffPosition = text.length;
+    }
 
-	var errors = [];
-	for(var i=0;i<installedDictionaries.length;i++)
-		errors[i] = countErrors(spellCheckEngines[installedDictionaries[i]],text);
+    if (cutoffPosition > text.length)
+      cutoffPosition = text.length;
 
-	var best = 0;
-	for(var i=0;i<installedDictionaries.length;i++)
-		if (errors[i]<errors[best])
-			best=i;
+    text = text.substring(0, cutoffPosition)
+               .trim()
+               .split(/[\s;:,.()\[\]¡!¿?]+/) //this is lame but \W will also throws out umlauts and all sorts of funny characters
+               .slice(-switchAsIType.kTextLengthMax);
+    return text;
+  },
 
-	if (installedDictionaries[best]==spellChecker.spellChecker.GetCurrentDictionary())
-		return;
+  onInput: function (event) {
+    let target = event.originalTarget;
+    if (!target || !target.value) {
+      return;
+    }
+    switchAsIType.registerJob(target);
+  },
 
-	spellChecker.spellChecker.SetCurrentDictionary(installedDictionaries[best]);
-	spellChecker.spellCheckRange(null);
-};		
-	
-countErrors = function(engine, tokens) {
-	var count=0;
-	for(var i=0;i<tokens.length;i++)
-		if((!engine.check(tokens[i])) && (!personalDictionary.check(tokens[i],engine.dictionary)))
-			count++;
-	return count;
-};
+  onWindowClosed: function (subject, topic) {
+    subject = subject.QueryInterface(Components.interfaces.nsIDOMWindow);
+    switchAsIType.unregisterEventListener(subject);
+  },
+
+  onWindowOpened: function (subject, topic) {
+    subject = subject.QueryInterface(Components.interfaces.nsIDOMWindow);
+    switchAsIType.registerEventListener(subject);
+  },
+
+  registerEventListener: function (window) {
+    window.addEventListener("input", switchAsIType.onInput, false);
+    switchAsIType.windows.add(window);
+  },
+
+  registerJob: function (target) {
+    if (switchAsIType.checkJobs.has(target)) {
+      return;
+    }
+    switchAsIType.checkJobs.set(target, {
+      observe: function(subject, topic, data) {
+        switchAsIType.checkJobs.delete(target);
+        switchAsIType.getLanguage(target);
+      },
+      timer: Components.classes["@mozilla.org/timer;1"].createInstance(Components.interfaces.nsITimer),
+    });
+    let currentJob = switchAsIType.checkJobs.get(target);
+    currentJob.timer.init(currentJob, switchAsIType.kProcessWaitTime, Components.interfaces.nsITimer.TYPE_ONE_SHOT);
+  },
+
+  resetState: function () {
+    switchAsIType.dictListUpToDate = false;
+    switchAsIType.dictLanguages.clear();
+
+    for (let window of switchAsIType.windows) {
+      switchAsIType.unregisterEventListener(window);
+    }
+    switchAsIType.windows.clear();
+
+    for (let checkJob of switchAsIType.checkJobs.values()) {
+      checkJob.timer.cancel();
+    }
+    switchAsIType.checkJobs.clear();
+  },
+
+  unregisterEventListener: function (window) {
+    window.removeEventListener("input", switchAsIType.onInput, false);
+    switchAsIType.windows.delete(window);
+  },
+
+  updateDictList: function () {
+    let installedDictionaries = [];
+    let spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"]
+                                     .getService(Components.interfaces.mozISpellCheckingEngine);
+    spellCheckEngine.getDictionaryList(installedDictionaries, {});
+    for (let languageID of installedDictionaries.value) {
+      let languageCode = (languageID.split("-"))[0];
+      if (!switchAsIType.dictLanguages.has(languageCode)) {
+        switchAsIType.dictLanguages.set(languageCode, languageID);
+      }
+    }
+  },
+}
