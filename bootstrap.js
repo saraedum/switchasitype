@@ -3,7 +3,6 @@ Components.utils.import("resource://gre/modules/AddonManager.jsm");
 
 spellCheckEngines = {};
 installedDictionaries = null;
-personalDictionary = null;
 windows = [];
 blockers = {};
 
@@ -43,7 +42,6 @@ resetState = function(){
 
 resetDictionaries = function(){
 	installedDictionaries = null;
-	personalDictionary = null;
 	spellCheckEngines = {};
 };
 	
@@ -55,24 +53,12 @@ onWindow = function(subject, topic){
 		register(subject);
 };
 
-log = function(message) {
-	Services.console.logStringMessage(message);
-};
-
 refreshDictionaries = function() {
 	if (installedDictionaries==null){
 		installedDictionaries = [];
 		var spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].getService(Components.interfaces.mozISpellCheckingEngine);
 		spellCheckEngine.getDictionaryList(this.installedDictionaries, {});
 		installedDictionaries = installedDictionaries.value.toString().split(",");
-
-		for(var i=0;i<this.installedDictionaries.length;i++){
-			spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].createInstance(Components.interfaces.mozISpellCheckingEngine);
-			spellCheckEngine.dictionary = installedDictionaries[i];
-			spellCheckEngines[installedDictionaries[i]] = spellCheckEngine;
-		}
-
-		personalDictionary = Components.classes["@mozilla.org/spellchecker/personaldictionary;1"].getService(Components.interfaces.mozIPersonalDictionary);
 	}
 };
 
@@ -159,8 +145,11 @@ check = function(target){
 	text = text.substring(0,cutoffPosition).replace(/^\s\s*/, '').replace(/\s\s*$/, '').split(/[\s;:,.()\[\]¡!¿?]+/).slice(-10);//this is lame but \W will also throws out umlauts and all sorts of funny characters
 
 	var errors = [];
-	for(var i=0;i<installedDictionaries.length;i++)
-		errors[i] = countErrors(spellCheckEngines[installedDictionaries[i]],text);
+	for(var i=0;i<installedDictionaries.length;i++){
+		var spellCheckEngine = Components.classes["@mozilla.org/spellchecker/engine;1"].getService(Components.interfaces.mozISpellCheckingEngine);
+		spellCheckEngine.dictionary = installedDictionaries[i];
+		errors[i] = countErrors(spellCheckEngine,text);
+	}
 
 	var best = 0;
 	for(var i=0;i<installedDictionaries.length;i++)
@@ -177,7 +166,7 @@ check = function(target){
 countErrors = function(engine, tokens) {
 	var count=0;
 	for(var i=0;i<tokens.length;i++)
-		if((!engine.check(tokens[i])) && (!personalDictionary.check(tokens[i],engine.dictionary)))
+		if(!engine.check(tokens[i]))
 			count++;
 	return count;
 };
